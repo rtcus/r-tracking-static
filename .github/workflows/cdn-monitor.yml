@@ -1,7 +1,7 @@
-name: 📊 CDN健康监控
+name: CDN健康监控
 on:
   schedule:
-    - cron: '*/15 * * * *'  # 每15分钟一次
+    - cron: '*/30 * * * *'  # 改为每30分钟一次（更稳定）
   workflow_dispatch:        # 允许手动触发
 
 jobs:
@@ -23,6 +23,7 @@ jobs:
           
           failed_urls=()
           all_output=""
+          has_failed="false"
           
           for url_pair in "${urls[@]}"; do
             name="${url_pair%|*}"
@@ -35,11 +36,12 @@ jobs:
               end_time=$(date +%s%3N)
               response_time=$((end_time - start_time))
               echo "✅ ${response_time}ms"
-              all_output+="✅ $name: ${response_time}ms\\n"
+              all_output+="✅ $name: ${response_time}ms\n"
             else
               echo "❌ 失败"
-              all_output+="❌ $name: 失败\\n"
+              all_output+="❌ $name: 失败\n"
               failed_urls+=("$name: $url")
+              has_failed="true"
             fi
           done
           
@@ -47,59 +49,39 @@ jobs:
           echo "检查完成："
           echo -e "$all_output"
           
-          # 如果有失败的，设置输出变量
-          if [ ${#failed_urls[@]} -gt 0 ]; then
-            echo "::set-output name=has_failed::true"
-            echo "::set-output name=failed_list::${failed_urls[*]}"
-            echo "::set-output name=summary::❌ CDN异常 - ${#failed_urls[@]}个服务失败"
+          # 使用新语法设置输出
+          echo "has_failed=$has_failed" >> $GITHUB_OUTPUT
+          echo "failed_list=${failed_urls[*]}" >> $GITHUB_OUTPUT
+          if [ "$has_failed" = "true" ]; then
+            echo "summary=❌ CDN异常 - ${#failed_urls[@]}个服务失败" >> $GITHUB_OUTPUT
           else
-            echo "::set-output name=has_failed::false"
-            echo "::set-output name=summary::✅ CDN所有服务正常"
+            echo "summary=✅ CDN所有服务正常" >> $GITHUB_OUTPUT
           fi
-          
-          # 输出所有结果供后续步骤使用
-          echo "::set-output name=full_report::$(echo -e "$all_output")"
-          
-      - name: 📧 发送邮件通知（如果失败）
-        if: steps.check.outputs.has_failed == 'true'
-        uses: dawidd6/action-send-mail@v3
-        with:
-          server_address: smtp.gmail.com
-          server_port: 465
-          username: ${{ secrets.EMAIL_USER }}
-          password: ${{ secrets.EMAIL_PASS }}
-          subject: '🚨 R跟单台CDN监控告警'
-          to: ${{ secrets.ALERT_EMAIL }}
-          from: GitHub Actions
-          body: |
-            CDN监控发现异常！
-            
-            失败的服务：
-            ${{ steps.check.outputs.failed_list }}
-            
-            详细报告：
-            ${{ steps.check.outputs.full_report }}
-            
-            时间：$(date)
-            
-            请立即检查：https://cdn.rtcus.cn
-            
-            来自：GitHub Actions CDN监控
-            
-      - name: 💬 发送Slack通知（可选）
-        if: steps.check.outputs.has_failed == 'true'
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          channel-id: '监控频道ID'
-          slack-message: |
-            🚨 CDN监控告警
-            ${{ steps.check.outputs.summary }}
-            失败：${{ steps.check.outputs.failed_list }}
-        env:
-          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          echo "full_report<<EOF" >> $GITHUB_OUTPUT
+          echo -e "$all_output" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
           
       - name: 📝 记录检查结果
         run: |
           echo "检查结果：${{ steps.check.outputs.summary }}"
           echo "详细报告："
           echo "${{ steps.check.outputs.full_report }}"
+          
+      # 邮件通知部分暂时注释掉，需要配置Secrets
+      # - name: 📧 发送邮件通知（如果失败）
+      #   if: steps.check.outputs.has_failed == 'true'
+      #   uses: dawidd6/action-send-mail@v3
+      #   with:
+      #     server_address: smtp.gmail.com
+      #     server_port: 465
+      #     username: ${{ secrets.EMAIL_USER }}
+      #     password: ${{ secrets.EMAIL_PASS }}
+      #     subject: '🚨 R跟单台CDN监控告警'
+      #     to: ${{ secrets.ALERT_EMAIL }}
+      #     from: GitHub Actions
+      #     body: |
+      #       CDN监控发现异常！
+      #       失败的服务：${{ steps.check.outputs.failed_list }}
+      #       详细报告：${{ steps.check.outputs.full_report }}
+      #       时间：$(date)
+      #       请立即检查：https://cdn.rtcus.cn
