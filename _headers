@@ -1,0 +1,28 @@
+# CDN缓存优化配置 - GitHub Pages原生支持
+/libs/bootstrap/css/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/libs/bootstrap/js/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/libs/font-awesome/css/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/libs/font-awesome/webfonts/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/libs/flatpickr/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/libs/leancloud-storage/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
+
+/libs/xlsx/*
+  Cache-Control: public, max-age=31536000, immutable
+  Access-Control-Allow-Origin: *
