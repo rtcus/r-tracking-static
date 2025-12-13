@@ -1,0 +1,105 @@
+name: 📊 CDN健康监控
+on:
+  schedule:
+    - cron: '*/15 * * * *'  # 每15分钟一次
+  workflow_dispatch:        # 允许手动触发
+
+jobs:
+  monitor:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 🔍 检查CDN可用性
+        id: check
+        run: |
+          echo "开始CDN健康检查 $(date)"
+          
+          # 定义要检查的URL
+          urls=(
+            "Bootstrap CSS|https://cdn.rtcus.cn/libs/bootstrap/css/bootstrap.min.css"
+            "Font Awesome|https://cdn.rtcus.cn/libs/font-awesome/css/all.min.css"
+            "Bootstrap JS|https://cdn.rtcus.cn/libs/bootstrap/js/bootstrap.bundle.min.js"
+            "LeanCloud|https://cdn.rtcus.cn/libs/leancloud-storage/av-min.js"
+          )
+          
+          failed_urls=()
+          all_output=""
+          
+          for url_pair in "${urls[@]}"; do
+            name="${url_pair%|*}"
+            url="${url_pair#*|}"
+            
+            echo -n "检查 $name ($url)... "
+            start_time=$(date +%s%3N)
+            
+            if curl -s -f --max-time 10 "$url" > /dev/null; then
+              end_time=$(date +%s%3N)
+              response_time=$((end_time - start_time))
+              echo "✅ ${response_time}ms"
+              all_output+="✅ $name: ${response_time}ms\\n"
+            else
+              echo "❌ 失败"
+              all_output+="❌ $name: 失败\\n"
+              failed_urls+=("$name: $url")
+            fi
+          done
+          
+          # 输出结果
+          echo "检查完成："
+          echo -e "$all_output"
+          
+          # 如果有失败的，设置输出变量
+          if [ ${#failed_urls[@]} -gt 0 ]; then
+            echo "::set-output name=has_failed::true"
+            echo "::set-output name=failed_list::${failed_urls[*]}"
+            echo "::set-output name=summary::❌ CDN异常 - ${#failed_urls[@]}个服务失败"
+          else
+            echo "::set-output name=has_failed::false"
+            echo "::set-output name=summary::✅ CDN所有服务正常"
+          fi
+          
+          # 输出所有结果供后续步骤使用
+          echo "::set-output name=full_report::$(echo -e "$all_output")"
+          
+      - name: 📧 发送邮件通知（如果失败）
+        if: steps.check.outputs.has_failed == 'true'
+        uses: dawidd6/action-send-mail@v3
+        with:
+          server_address: smtp.gmail.com
+          server_port: 465
+          username: ${{ secrets.EMAIL_USER }}
+          password: ${{ secrets.EMAIL_PASS }}
+          subject: '🚨 R跟单台CDN监控告警'
+          to: ${{ secrets.ALERT_EMAIL }}
+          from: GitHub Actions
+          body: |
+            CDN监控发现异常！
+            
+            失败的服务：
+            ${{ steps.check.outputs.failed_list }}
+            
+            详细报告：
+            ${{ steps.check.outputs.full_report }}
+            
+            时间：$(date)
+            
+            请立即检查：https://cdn.rtcus.cn
+            
+            来自：GitHub Actions CDN监控
+            
+      - name: 💬 发送Slack通知（可选）
+        if: steps.check.outputs.has_failed == 'true'
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          channel-id: '监控频道ID'
+          slack-message: |
+            🚨 CDN监控告警
+            ${{ steps.check.outputs.summary }}
+            失败：${{ steps.check.outputs.failed_list }}
+        env:
+          SLACK_BOT_TOKEN: ${{ secrets.SLACK_BOT_TOKEN }}
+          
+      - name: 📝 记录检查结果
+        run: |
+          echo "检查结果：${{ steps.check.outputs.summary }}"
+          echo "详细报告："
+          echo "${{ steps.check.outputs.full_report }}"
